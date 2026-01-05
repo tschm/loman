@@ -1543,9 +1543,9 @@ class Computation:
         """
         if isinstance(file_, str):
             with open(file_, "rb") as f:
-                obj = dill.load(f)
+                obj = dill.load(f)  # noqa: S301
         else:
-            obj = dill.load(file_)
+            obj = dill.load(file_)  # noqa: S301
         if isinstance(obj, Computation):
             return obj
         else:

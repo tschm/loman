@@ -1,6 +1,7 @@
 """Visualization tools for computation graphs using Graphviz."""
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -390,9 +391,17 @@ class GraphView:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
             f.write(self.viz_dot.create_pdf())
             if sys.platform == "win32":
-                os.startfile(f.name)
+                os.startfile(f.name)  # noqa: S606
             else:
-                subprocess.run(["open", f.name], check=False)
+                # Use full path to 'open' command for security
+                open_cmd = shutil.which("open")
+                if open_cmd:
+                    subprocess.run([open_cmd, f.name], check=False)
+                else:
+                    # Fallback to xdg-open on Linux
+                    xdg_open = shutil.which("xdg-open")
+                    if xdg_open:
+                        subprocess.run([xdg_open, f.name], check=False)
 
     def _repr_svg_(self):
         return self.svg()
