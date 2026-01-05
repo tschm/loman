@@ -393,15 +393,14 @@ class GraphView:
             if sys.platform == "win32":
                 os.startfile(f.name)  # noqa: S606
             else:
-                # Use full path to 'open' command for security
-                open_cmd = shutil.which("open")
-                if open_cmd:
-                    subprocess.run([open_cmd, f.name], check=False)
-                else:
-                    # Fallback to xdg-open on Linux
-                    xdg_open = shutil.which("xdg-open")
-                    if xdg_open:
-                        subprocess.run([xdg_open, f.name], check=False)
+                # Try multiple commands to open the PDF
+                for cmd_name in ["open", "xdg-open"]:
+                    cmd_path = shutil.which(cmd_name)
+                    if cmd_path:
+                        subprocess.run([cmd_path, f.name], check=False)
+                        return
+                # If no PDF viewer command is found, raise an error
+                raise RuntimeError("Could not find a PDF viewer command (tried 'open' and 'xdg-open')")
 
     def _repr_svg_(self):
         return self.svg()
