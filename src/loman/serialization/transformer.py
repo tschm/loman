@@ -34,13 +34,9 @@ TYPENAME_DATACLASS = "dataclass"
 class UntransformableTypeError(Exception):
     """Exception raised when a type cannot be transformed for serialization."""
 
-    pass
-
 
 class UnrecognizedTypeError(Exception):
     """Exception raised when a type is not recognized during transformation."""
-
-    pass
 
 
 class MissingObject:
@@ -69,17 +65,17 @@ class CustomTransformer(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return unique name identifier for this transformer."""
-        pass  # pragma: no cover
+        # pragma: no cover
 
     @abstractmethod
     def to_dict(self, transformer: "Transformer", o: object) -> dict[str, Any]:
         """Convert object to dictionary representation."""
-        pass  # pragma: no cover
+        # pragma: no cover
 
     @abstractmethod
     def from_dict(self, transformer: "Transformer", d: dict[str, Any]) -> object:
         """Reconstruct object from dictionary representation."""
-        pass  # pragma: no cover
+        # pragma: no cover
 
     @property
     def supported_direct_types(self) -> Iterable[type]:
@@ -98,13 +94,13 @@ class Transformable(ABC):
     @abstractmethod
     def to_dict(self, transformer: "Transformer") -> dict[str, Any]:
         """Convert this object to dictionary representation."""
-        pass  # pragma: no cover
+        # pragma: no cover
 
     @classmethod
     @abstractmethod
     def from_dict(cls, transformer: "Transformer", d: dict[str, Any]) -> object:
         """Reconstruct object from dictionary representation."""
-        pass  # pragma: no cover
+        # pragma: no cover
 
 
 class Transformer:
