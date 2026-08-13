@@ -74,3 +74,10 @@ skips = ["B301", "B403", "B404"]
 # @overload stubs delegate their documentation to the concrete implementation,
 # so they should not count against docstring coverage.
 ignore-overloaded-functions = true
+
+# Functions and classes defined *inside* another function are local scaffolding,
+# not API: the tests build computation graphs from inline node functions such as
+# `def b(a): return a + 1`, and documenting those only restates the body. The
+# enclosing test keeps its docstring, which is where the intent belongs.
+ignore-nested-functions = true
+ignore-nested-classes = true
