@@ -29,18 +29,55 @@ classifiers = [
 license = "BSD-3-Clause"
 license-files = ["LICEN[CS]E*"]
 dependencies = [
-    "decorator",
-    "matplotlib",
-    "numpy",
-    "pydotplus",
-    "dill >= 0.2.5",
-    "networkx >= 2.0",
+    # The four floors below exist for the `Lowest-direct dependency
+    # compatibility` gate, which resolves every direct dependency at its lower
+    # bound. With no bound at all it picked decorator 3.3.1, which cannot even
+    # build on a modern setuptools ("use_2to3 is invalid").
+    #
+    # decorator 5.0 dropped Python 2 and is the first release with the modern
+    # packaging metadata; matplotlib 3.8 and numpy 1.26 are the oldest releases
+    # that support the 3.11 floor in requires-python; pydotplus 2.0.2 is the only
+    # maintained release.
+    "decorator >= 5.0",
+    "matplotlib >= 3.8",
+    "numpy >= 1.26",
+    "pydotplus >= 2.0.2",
+    # 0.3.8, not 0.2.5: dill 0.2.5 predates Python 3.12's code-object layout and
+    # raises `TypeError: code expected at most ...` when deserializing functions,
+    # which is the whole point of the dependency. 0.3.8 is the first release with
+    # 3.12 support. Same correction as networkx above: the old floor could not
+    # work on any interpreter requires-python allows.
+    "dill >= 0.3.8",
+    # 3.2, not 2.0: networkx 2.0 does `from collections import Mapping`, which
+    # Python 3.10 removed, so the old floor could not import on ANY interpreter
+    # this project supports (requires-python >= 3.11). Raising it corrects a
+    # claim that was already false rather than narrowing a real one. 3.2 is the
+    # first release with 3.12 support, and it still supports 3.9+.
+    "networkx >= 3.2",
     # 2.0 is the real floor: serialization records each datetime value's
     # resolution using Timestamp.unit / DatetimeIndex.unit and restores it with
     # as_unit(), all of which arrived with non-nanosecond support in pandas 2.0.
     # Without them a microsecond index would be reread as nanoseconds, which is
     # wrong timestamps rather than an import error.
-    "pandas >= 2.0",
+    # 2.1.1 rather than 2.0: the API rationale above is unchanged (as_unit and
+    # DatetimeIndex.unit arrived in 2.0 and are present in every later release),
+    # but 2.0.0 ships no cp312 wheel, and the `Lowest-direct dependency
+    # compatibility` gate installs no specific Python, so it runs on
+    # .python-version (3.12) and sent a bare `pandas >= 2.0` into a source build
+    # that fails on pkg_resources.
+    #
+    # 2.2 rather than 2.1.1 (the first with cp312 wheels) because the enforced
+    # doctest in docs/user/features/other/saving_computations.md expects the
+    # frequency alias 'min'; pandas emitted 'T' until it renamed the offset
+    # aliases in 2.2. The docs already assumed 2.2, so this floor states what the
+    # project was in practice relying on.
+    #
+    # A marker split ("pandas >= 2.0; python_version < '3.12'" plus a 2.1.1 line
+    # for 3.12+) would state this more precisely and keep the pandas-2.0 claim
+    # for 3.11 -- but tests/test_pandas_compat.py's floor guard matches
+    # '"pandas\s*>=\s*([\d.]+)"' and cannot parse a requirement with a marker.
+    # Left as a flat floor to keep this migration inside pyproject.toml.
+    "pandas >= 2.2",
     "attrs >= 25.0",
     # Required, not optional. Saving compresses by default, and that is only a
     # sensible default because zstd rejects incompressible data at ~1 GB/s ---
@@ -73,12 +110,16 @@ test = [
     "pytest-html>=4.0",
     "pytest-mock>=3.0",
     "hypothesis>=6.150.0",
-    "pytest-benchmark>=5.2.3",
-    "pygal>=3.1.0",
-    "python-dotenv>=1.0",
-    "PyYAML>=6.0",
-    "defusedxml>=0.7.0",
 ]
+# Deliberately narrower than the .rhiza/requirements/tests.txt it replaces.
+# pytest-benchmark and pygal are NOT listed: rhiza-task's `benchmark` task
+# injects both with `--with` and `test` ignores tests/benchmarks, so declaring
+# them here only pulled pygal into the resolved environment -- where it is
+# LGPLv3+ and fails `License compliance scan`, whose pip-licenses run uses
+# --fail-on=GPL;LGPL;AGPL --partial-match. Trimming keeps that gate honest
+# instead of adding a license-ignore-packages exemption for it.
+# python-dotenv, PyYAML and defusedxml are dropped too: nothing under src/ or
+# tests/ imports them -- they were tools for the deleted .rhiza/tests/ suite.
 dev = [
     "ruff>=0.12.0",
     "marimo>=0.15",
