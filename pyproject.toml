@@ -66,6 +66,71 @@ Homepage = "https://github.com/janusassetallocation/loman"
 [tool.hatch.build.targets.wheel]
 packages = ["src/loman"]
 
+[tool.rhiza-task]
+# Settings recovered from the make layer that rhiza v1.4.0 retired (Makefile,
+# .rhiza/rhiza.mk, .rhiza/make.d/**, .rhiza/.env). They have nowhere else to live
+# now that those files are gone, and rhiza-task's own defaults are not the same
+# as what this repo's make layer set.
+#
+# Values below are compared against `uvx rhiza-task@0.3.1 print <setting>`, the
+# version rhiza_ci.yml@v1.4.2 pins for every gate step -- not floating latest,
+# whose defaults have moved between releases.
+
+# Was (Makefile):
+#   MKDOCS_EXTRA_PACKAGES = --with-editable . --with 'mkdocstrings[python]' \
+#                           --with 'mkdocs_graphviz<2'
+# CLI default: ["mkdocstrings[python]"]
+#
+# Naming this setting REPLACES the default list rather than extending it, so
+# mkdocstrings[python] is repeated here on purpose. Dropping it would leave
+# `::: loman.*` in docs/api/ unrendered.
+#
+# mkdocs_graphviz is pinned below 2 and is not optional: mkdocs.yml declares it
+# under `markdown_extensions`, and in 2.0 it stopped being a Markdown extension
+# and became an MkDocs plugin, losing the makeExtension entry point that key
+# needs. The book is built with zensical, which shims only a fixed set of MkDocs
+# plugins, so a 2.x install would be ignored silently and every ```dot block
+# would render as a plain code fence instead of a graph. Unpin once zensical can
+# run the plugin.
+#
+# "." replaces the old `--with-editable .`: each list entry becomes exactly one
+# `--with`, so there is no editable equivalent, and a non-editable install is
+# equivalent for a one-shot build. The `book` task still runs zensical through
+# an isolated `uvx`, so without this the project is not importable at all.
+mkdocs-extra-packages = [".", "mkdocstrings[python]", "mkdocs_graphviz<2"]
+
+# Deliberately NOT set -- the make layer's value and the rhiza-task@0.3.1 default
+# agree, so naming them here would only create a second place to edit:
+#   source-folder        .rhiza/.env SOURCE_FOLDER=src            == default "src"
+#   tests-folder         test.mk TESTS_FOLDER := tests            == default "tests"
+#   marimo-folder        .rhiza/.env MARIMO_FOLDER=docs/notebooks == default
+#   book-output          book.mk BOOK_OUTPUT ?= _book             == default "_book"
+#   license-fail-on      quality.mk LICENSE_FAIL_ON GPL;LGPL;AGPL == same set
+#   python-version       rhiza.mk read .python-version (3.12); rhiza-task reads
+#                        it too, so `print python-version` already says 3.12
+#
+# coverage-fail-under: test.mk had COVERAGE_FAIL_UNDER ?= 90, which is also the
+# default. There is no [tool.coverage.report] fail-under in this file to outrank
+# it, so 90 is what the gate enforces either way.
+#
+# typechecker: NOT "both". This repo came from rhiza v0.10.3, which predates the
+# `TYPECHECKER ?= both` that v1.3.x python.mk carried -- test.mk ran only
+# `uv run ty check src`, matching the CLI default of "ty". Commit 95a5e9d dropped
+# mypy from this repo as an unused dev dependency, so setting "both" would not
+# preserve behaviour, it would add a typechecker back and need mypy reinstated.
+#
+# license-ignore-packages: the make layer had no LICENSE_IGNORE_PACKAGES line and
+# the default is empty. Left unset; the License compliance gate answers whether
+# anything here actually needs an exemption.
+#
+# pytest-rhiza: the make layer had no RHIZA_CHECKS_VERSION pin -- it ran the
+# in-tree .rhiza/tests/ suite, which v1.4.2 no longer ships. Adopting the CLI
+# default is an upgrade decision rather than a preserved value, so it stays
+# unset and the default applies.
+#
+# ci-os-matrix: nothing in the make layer set it, so the single-OS default is
+# what this repo already had; no matrix was narrowed by this migration.
+
 [tool.deptry.per_rule_ignores]
 # pyarrow is loaded by name through loman._extras.require, so there is no import
 # statement for deptry's static analysis to find. It is genuinely used --- see
