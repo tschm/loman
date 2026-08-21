@@ -13,6 +13,14 @@ readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
+    # The per-minor entries are what rhiza_ci.yml@v1.4.2 turns into its test
+    # matrix, via build-and-inspect-python-package's
+    # supported_python_classifiers_json_array. Without them the matrix is [] and
+    # the test and typecheck jobs never run at all -- and the CI gate rejects
+    # "skipped" exactly like a failure. Keep in step with requires-python.
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -21,18 +29,55 @@ classifiers = [
 license = "BSD-3-Clause"
 license-files = ["LICEN[CS]E*"]
 dependencies = [
-    "decorator",
-    "matplotlib",
-    "numpy",
-    "pydotplus",
-    "dill >= 0.2.5",
-    "networkx >= 2.0",
+    # The four floors below exist for the `Lowest-direct dependency
+    # compatibility` gate, which resolves every direct dependency at its lower
+    # bound. With no bound at all it picked decorator 3.3.1, which cannot even
+    # build on a modern setuptools ("use_2to3 is invalid").
+    #
+    # decorator 5.0 dropped Python 2 and is the first release with the modern
+    # packaging metadata; matplotlib 3.8 and numpy 1.26 are the oldest releases
+    # that support the 3.11 floor in requires-python; pydotplus 2.0.2 is the only
+    # maintained release.
+    "decorator >= 5.0",
+    "matplotlib >= 3.8",
+    "numpy >= 1.26",
+    "pydotplus >= 2.0.2",
+    # 0.3.8, not 0.2.5: dill 0.2.5 predates Python 3.12's code-object layout and
+    # raises `TypeError: code expected at most ...` when deserializing functions,
+    # which is the whole point of the dependency. 0.3.8 is the first release with
+    # 3.12 support. Same correction as networkx above: the old floor could not
+    # work on any interpreter requires-python allows.
+    "dill >= 0.3.8",
+    # 3.2, not 2.0: networkx 2.0 does `from collections import Mapping`, which
+    # Python 3.10 removed, so the old floor could not import on ANY interpreter
+    # this project supports (requires-python >= 3.11). Raising it corrects a
+    # claim that was already false rather than narrowing a real one. 3.2 is the
+    # first release with 3.12 support, and it still supports 3.9+.
+    "networkx >= 3.2",
     # 2.0 is the real floor: serialization records each datetime value's
     # resolution using Timestamp.unit / DatetimeIndex.unit and restores it with
     # as_unit(), all of which arrived with non-nanosecond support in pandas 2.0.
     # Without them a microsecond index would be reread as nanoseconds, which is
     # wrong timestamps rather than an import error.
-    "pandas >= 2.0",
+    # 2.1.1 rather than 2.0: the API rationale above is unchanged (as_unit and
+    # DatetimeIndex.unit arrived in 2.0 and are present in every later release),
+    # but 2.0.0 ships no cp312 wheel, and the `Lowest-direct dependency
+    # compatibility` gate installs no specific Python, so it runs on
+    # .python-version (3.12) and sent a bare `pandas >= 2.0` into a source build
+    # that fails on pkg_resources.
+    #
+    # 2.2 rather than 2.1.1 (the first with cp312 wheels) because the enforced
+    # doctest in docs/user/features/other/saving_computations.md expects the
+    # frequency alias 'min'; pandas emitted 'T' until it renamed the offset
+    # aliases in 2.2. The docs already assumed 2.2, so this floor states what the
+    # project was in practice relying on.
+    #
+    # A marker split ("pandas >= 2.0; python_version < '3.12'" plus a 2.1.1 line
+    # for 3.12+) would state this more precisely and keep the pandas-2.0 claim
+    # for 3.11 -- but tests/test_pandas_compat.py's floor guard matches
+    # '"pandas\s*>=\s*([\d.]+)"' and cannot parse a requirement with a marker.
+    # Left as a flat floor to keep this migration inside pyproject.toml.
+    "pandas >= 2.2",
     "attrs >= 25.0",
     # Required, not optional. Saving compresses by default, and that is only a
     # sensible default because zstd rejects incompressible data at ~1 GB/s ---
@@ -54,6 +99,27 @@ efficient = [
 ]
 
 [dependency-groups]
+# Recovered from .rhiza/requirements/tests.txt, which rhiza v1.4.2 no longer
+# ships. rhiza-task's `test` task injects pytest and friends itself with
+# `--with`, so this group is not what makes the suite run -- but
+# pytest_rhiza.checks.test_pyproject requires a `test` group listing pytest,
+# and it is the only remaining declaration of what the suite needs.
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pytest-html>=4.0",
+    "pytest-mock>=3.0",
+    "hypothesis>=6.150.0",
+]
+# Deliberately narrower than the .rhiza/requirements/tests.txt it replaces.
+# pytest-benchmark and pygal are NOT listed: rhiza-task's `benchmark` task
+# injects both with `--with` and `test` ignores tests/benchmarks, so declaring
+# them here only pulled pygal into the resolved environment -- where it is
+# LGPLv3+ and fails `License compliance scan`, whose pip-licenses run uses
+# --fail-on=GPL;LGPL;AGPL --partial-match. Trimming keeps that gate honest
+# instead of adding a license-ignore-packages exemption for it.
+# python-dotenv, PyYAML and defusedxml are dropped too: nothing under src/ or
+# tests/ imports them -- they were tools for the deleted .rhiza/tests/ suite.
 dev = [
     "ruff>=0.12.0",
     "marimo>=0.15",
@@ -62,9 +128,135 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/janusassetallocation/loman"
+Repository = "https://github.com/tschm/loman"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/loman"]
+
+[tool.bumpversion]
+# Recovered from .rhiza/.cfg.toml, which was template-owned at v0.10.3 and which
+# v1.4.2 no longer ships. It has to live in pyproject.toml because that is one of
+# the only four filenames bump-my-version auto-discovers (.bumpversion.toml,
+# .bumpversion.cfg, setup.cfg, pyproject.toml) -- `.rhiza/.cfg.toml` was never
+# one of them and worked only because the deleted .rhiza/make.d/releasing.mk
+# pointed `rhiza-tools bump` at it explicitly.
+#
+# A block anywhere else is inert, and inert is silent: with no config discovered
+# bump-my-version falls back to `git describe` and reports the last reachable tag
+# as the current version, so a release can be cut at a version already published.
+# pytest_rhiza.checks.test_pyproject enforces discoverability for that reason.
+#
+# Values are carried over verbatim from .rhiza/.cfg.toml -- commit 396bd37
+# ("Chore: bump version 0.6.1-alpha.6 -> 0.7.0") shows the message template and
+# this scheme in use.
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)(?:[-]?(?P<release>[a-z]+)[\\.]?(?P<pre_n>\\d+))?(?:\\+build\\.(?P<build_n>\\d+))?"
+serialize = [
+    "{major}.{minor}.{patch}-{release}.{pre_n}+build.{build_n}",
+    "{major}.{minor}.{patch}+build.{build_n}",
+    "{major}.{minor}.{patch}-{release}.{pre_n}",
+    "{major}.{minor}.{patch}",
+]
+search = "{current_version}"
+replace = "{new_version}"
+regex = false
+ignore_missing_version = false
+ignore_missing_files = false
+allow_dirty = false
+
+# The two values that are deliberately NOT carried over from .rhiza/.cfg.toml,
+# which had commit = true and tag = true. At v1.4.2 the release flow commits and
+# tags itself so the changelog lands in the bump commit; leaving these true would
+# add a second commit and a duplicate tag. pytest_rhiza's
+# test_the_release_flow_owns_the_commit_and_the_tag asserts both are false, and
+# linalg, nncg and shrinkage all set them the same way. The old table's
+# tag_name / tag_message / message / commit_args / pre_commit_hooks keys only
+# ever applied to the commit and tag this no longer makes, so they go with them.
+commit = false
+tag = false
+
+# The [[tool.bumpversion.files]] entry that .rhiza/.cfg.toml carried for
+# pyproject.toml is deliberately NOT carried over. bump-my-version reads and
+# rewrites the PEP 621 [project].version field natively, so the number stays
+# declared exactly once -- and now that this table lives in pyproject.toml
+# itself, its unscoped `search = 'version = "{current_version}"'` would be a
+# hazard rather than a no-op. linalg, nncg and shrinkage all dropped it for the
+# same reason when they migrated.
+[tool.bumpversion.parts.release]
+optional_value = "prod"
+values = [
+    "dev",
+    "alpha",
+    "a",  # PEP 440 short form for alpha
+    "beta",
+    "b",  # PEP 440 short form for beta
+    "rc",
+    "prod",
+]
+
+[tool.rhiza-task]
+# Settings recovered from the make layer that rhiza v1.4.0 retired (Makefile,
+# .rhiza/rhiza.mk, .rhiza/make.d/**, .rhiza/.env). They have nowhere else to live
+# now that those files are gone, and rhiza-task's own defaults are not the same
+# as what this repo's make layer set.
+#
+# Values below are compared against `uvx rhiza-task@0.3.1 print <setting>`, the
+# version rhiza_ci.yml@v1.4.2 pins for every gate step -- not floating latest,
+# whose defaults have moved between releases.
+
+# Was (Makefile):
+#   MKDOCS_EXTRA_PACKAGES = --with-editable . --with 'mkdocstrings[python]' \
+#                           --with 'mkdocs_graphviz<2'
+# CLI default: ["mkdocstrings[python]"]
+#
+# Naming this setting REPLACES the default list rather than extending it, so
+# mkdocstrings[python] is repeated here on purpose. Dropping it would leave
+# `::: loman.*` in docs/api/ unrendered.
+#
+# mkdocs_graphviz is pinned below 2 and is not optional: mkdocs.yml declares it
+# under `markdown_extensions`, and in 2.0 it stopped being a Markdown extension
+# and became an MkDocs plugin, losing the makeExtension entry point that key
+# needs. The book is built with zensical, which shims only a fixed set of MkDocs
+# plugins, so a 2.x install would be ignored silently and every ```dot block
+# would render as a plain code fence instead of a graph. Unpin once zensical can
+# run the plugin.
+#
+# "." replaces the old `--with-editable .`: each list entry becomes exactly one
+# `--with`, so there is no editable equivalent, and a non-editable install is
+# equivalent for a one-shot build. The `book` task still runs zensical through
+# an isolated `uvx`, so without this the project is not importable at all.
+mkdocs-extra-packages = [".", "mkdocstrings[python]", "mkdocs_graphviz<2"]
+
+# Deliberately NOT set -- the make layer's value and the rhiza-task@0.3.1 default
+# agree, so naming them here would only create a second place to edit:
+#   source-folder        .rhiza/.env SOURCE_FOLDER=src            == default "src"
+#   tests-folder         test.mk TESTS_FOLDER := tests            == default "tests"
+#   marimo-folder        .rhiza/.env MARIMO_FOLDER=docs/notebooks == default
+#   book-output          book.mk BOOK_OUTPUT ?= _book             == default "_book"
+#   license-fail-on      quality.mk LICENSE_FAIL_ON GPL;LGPL;AGPL == same set
+#   python-version       rhiza.mk read .python-version (3.12); rhiza-task reads
+#                        it too, so `print python-version` already says 3.12
+#
+# coverage-fail-under: test.mk had COVERAGE_FAIL_UNDER ?= 90, which is also the
+# default. There is no [tool.coverage.report] fail-under in this file to outrank
+# it, so 90 is what the gate enforces either way.
+#
+# typechecker: NOT "both". This repo came from rhiza v0.10.3, which predates the
+# `TYPECHECKER ?= both` that v1.3.x python.mk carried -- test.mk ran only
+# `uv run ty check src`, matching the CLI default of "ty". Commit 95a5e9d dropped
+# mypy from this repo as an unused dev dependency, so setting "both" would not
+# preserve behaviour, it would add a typechecker back and need mypy reinstated.
+#
+# license-ignore-packages: the make layer had no LICENSE_IGNORE_PACKAGES line and
+# the default is empty. Left unset; the License compliance gate answers whether
+# anything here actually needs an exemption.
+#
+# pytest-rhiza: the make layer had no RHIZA_CHECKS_VERSION pin -- it ran the
+# in-tree .rhiza/tests/ suite, which v1.4.2 no longer ships. Adopting the CLI
+# default is an upgrade decision rather than a preserved value, so it stays
+# unset and the default applies.
+#
+# ci-os-matrix: nothing in the make layer set it, so the single-OS default is
+# what this repo already had; no matrix was narrowed by this migration.
 
 [tool.deptry.per_rule_ignores]
 # pyarrow is loaded by name through loman._extras.require, so there is no import

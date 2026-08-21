@@ -1,9 +1,22 @@
 template-repository: "jebel-quant/rhiza"
-template-branch: "v0.10.3"
+template-branch: "v1.4.2"
+
+profiles:
+  - github-project
 
 templates:
   - devcontainer
-  - github
-  - book
-  - marimo
-  - tests
+  - github-devcontainer
+
+# Matched against DESTINATION paths -- where the file lands here -- not against
+# clone-relative `bundles/...` paths, which match nothing and fail silently.
+exclude:
+  # Mutation testing is opt-in via the MUTATION_ENABLED repository variable, and
+  # `gh variable list -R tschm/loman` is empty, so the caller's gate would never
+  # let the job start. Not delivered rather than delivered-and-dormant.
+  # Re-enabling means removing this line, not just setting the variable.
+  - .github/workflows/rhiza_mutation.yml
+  # Fuzzing is opt-in via FUZZING_ENABLED, also unset here. Unlike mutation, its
+  # gate lives inside the reusable workflow, so if delivered it would start a job
+  # on every PR purely to skip. Same caveat: re-enabling needs this line removed.
+  - .github/workflows/rhiza_fuzzing.yml
