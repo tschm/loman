@@ -34,8 +34,34 @@ jobs:
           version: "0.11.7"
           python-version: "3.11"
 
-      # The target lives in .rhiza/make.d/20-compat-tests.mk, so the list of
-      # version-sensitive modules is defined once rather than here as well.
+      # Inlined from what was .rhiza/make.d/20-compat-tests.mk. Rhiza v1.4.0
+      # retired the make layer, and that fragment -- although repo-owned --
+      # depended on it: install-uv, ${UV_BIN}, ${TESTS_FOLDER} and the colour
+      # vars all came from the deleted .rhiza/rhiza.mk and .rhiza/make.d/test.mk.
+      # `uvx rhiza-task shim` does not define test-compat, so `make test-compat`
+      # would have failed here. The module list therefore lives in this file now.
+      #
+      # Only the modules whose behaviour depends on the pandas version. The rest
+      # of the suite is version-independent and already covered by the main CI
+      # matrix. The property tests are included because the value model --
+      # datetime resolution above all -- is precisely what differs between the
+      # two pandas versions.
+      #
+      # `--isolated` resolves its own environment from pyproject.toml, so the
+      # project venv is not built first.
       - name: Run the version-sensitive tests against pandas ${{ matrix.pandas }}
         run: |
-          make test-compat PANDAS_MIN=${{ matrix.pandas }}
+          uv run --isolated \
+            --with "pandas>=${{ matrix.pandas }},<3.0" \
+            --with "numpy<2.3" \
+            --with pytest \
+            --with hypothesis \
+            pytest \
+              tests/test_serialization.py \
+              tests/test_serialization_behaviour.py \
+              tests/test_containers.py \
+              tests/test_compression.py \
+              tests/test_byos.py \
+              tests/test_pandas_compat.py \
+              tests/test_serialization_properties.py \
+              -q
