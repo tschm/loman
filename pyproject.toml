@@ -12,7 +12,16 @@ description = "Loman tracks state of computations, and the dependencies between 
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
+    # CI runs the test matrix on every version listed here. The generator
+    # currently derives that matrix from requires-python rather than these
+    # classifiers, so they are metadata rather than a control -- but they are
+    # the only place a user or a resolver can read which interpreters are
+    # actually supported, and they must not disagree with what CI runs.
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -20,19 +29,42 @@ classifiers = [
 ]
 license = "BSD-3-Clause"
 license-files = ["LICEN[CS]E*"]
+# A floor states the oldest version this code actually works with. It is NOT a
+# statement about wheel availability: whether numpy 1.23 has a wheel for 3.14 is
+# already encoded in numpy's own wheel tags, and a resolver on 3.14 will simply
+# not select it. Duplicating that here would raise the floor for everyone,
+# including the 3.11 users for whom the older version is both installable and
+# correct.
+#
+# The exception is a runtime incompatibility that tags cannot express, because
+# the distribution is pure Python and installs anywhere: dill below 0.4.0
+# installs cleanly on 3.14 and then fails, since CPython 3.14 changed the
+# signature of _Pickler._batch_setitems(). That has to be declared.
+#
+# These are verified, not assumed: the floors job in
+# .github/workflows/compatibility.yml resolves every direct dependency at
+# exactly these versions on 3.11 -- the oldest supported interpreter, and the
+# only one where the whole floor set is installable -- and runs the suite
+# against them.
 dependencies = [
-    "decorator",
-    "matplotlib",
-    "numpy",
-    "pydotplus",
-    "dill >= 0.2.5",
-    "networkx >= 2.0",
-    # 2.0 is the real floor: serialization records each datetime value's
-    # resolution using Timestamp.unit / DatetimeIndex.unit and restores it with
-    # as_unit(), all of which arrived with non-nanosecond support in pandas 2.0.
-    # Without them a microsecond index would be reread as nanoseconds, which is
-    # wrong timestamps rather than an import error.
-    "pandas >= 2.0",
+    "decorator >= 5.1.1",
+    "matplotlib >= 3.6.0",
+    "numpy >= 1.23.2",
+    "pydotplus >= 2.0.2",
+    # 0.4.0 is not a behaviour floor but a 3.14 one; see the note above.
+    "dill >= 0.4.0",
+    "networkx >= 3.0",
+    # 2.0 is the floor: serialization records each datetime value's resolution
+    # using Timestamp.unit / DatetimeIndex.unit and restores it with as_unit(),
+    # all of which arrived with non-nanosecond support in pandas 2.0. Without
+    # them a microsecond index would be reread as nanoseconds, which is wrong
+    # timestamps rather than an import error.
+    #
+    # 2.2, not 2.0, because the format records a DatetimeIndex's freq verbatim
+    # and pandas renamed the minute alias from "T" to "min" in 2.2 -- pandas 3
+    # no longer parses "T" at all, so a file written under an older pandas can
+    # carry a freq string a current reader rejects.
+    "pandas >= 2.2",
     "attrs >= 25.0",
     # Required, not optional. Saving compresses by default, and that is only a
     # sensible default because zstd rejects incompressible data at ~1 GB/s ---
@@ -54,17 +86,118 @@ efficient = [
 ]
 
 [dependency-groups]
+# `test` holds exactly what `pytest tests` needs to collect and run, and nothing
+# else. It is split out because rhiza's pyproject gate requires a group of that
+# name listing pytest, but the split earns its keep on its own: a CI job that only
+# runs the suite can ask for the runner without also resolving ruff and marimo.
+test = [
+    # The make targets provision the runner ad-hoc with `uv run --with pytest`,
+    # which leaves it undeclared for anything not going through them -- notably
+    # `uv run --all-groups ... pytest`, which fails with "Failed to spawn:
+    # pytest". pytest-mock supplies the `mocker` fixture and pytest-timeout backs
+    # the `timeout` setting in pytest.ini.
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "pytest-timeout>=2.3",
+    # test_ui_value, test_ui_viewmodel and test_visualization import hypothesis at
+    # module scope, so plain `make test` cannot collect them without it. The
+    # hypothesis-test target passes `--with hypothesis`, which only covers itself.
+    "hypothesis>=6.98.0",
+]
+
+# Everything a contributor needs, which is the test group plus the tooling that is
+# not part of running the suite. `include-group` rather than a second copy of the
+# runner pins: `--group dev` and `--all-groups` both still resolve pytest, so no
+# caller had to change when the group above was carved out.
 dev = [
+    { include-group = "test" },
+    # The `ty` pin that lived here has moved to `ty-version` under [tool.rhiza-task].
+    # rhiza v1.7.3 took Jebel-Quant/rhiza#1667 and now provisions the checker at an
+    # exact version of its own, so a second constraint in this group would be a
+    # resolution conflict rather than a belt-and-braces pin.
     "ruff>=0.12.0",
     "marimo>=0.15",
+    # Imported by the notebooks under docs/notebooks/, not by the suite.
     "scipy>=1.16.3",
 ]
 
 [project.urls]
 Homepage = "https://github.com/janusassetallocation/loman"
+# The canonical spelling of the org, which `Homepage` predates: janusassetallocation
+# still resolves, but only as a 301 to this one. Required by rhiza's pyproject gate
+# (pytest_rhiza.checks.test_pyproject.TestProjectUrls) since 1.x.
+Repository = "https://github.com/janushendersonassetallocation/loman"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/loman"]
+
+# Without this table bump-my-version finds no config in any of the four filenames
+# it searches, and does not fail: it falls back to `git describe` and reports the
+# newest reachable tag as the current version. A release is then cut relative to
+# that tag rather than the number in this file, so a project whose declared
+# version is already published gets offered a bump to a version that exists.
+#
+# Deliberately three flags and no `current_version`: once the table exists,
+# bump-my-version reads and rewrites PEP 621 [project].version natively, so
+# restating the number here would only give it somewhere to go stale. There are
+# no [[tool.bumpversion.files]] entries for the same reason.
+#
+# Nothing in this comment spells a version number out, and that is load-bearing
+# rather than style. With no [[files]] entries bump-my-version searches the whole
+# of pyproject.toml for the current version string and rewrites every occurrence,
+# so a literal example written here would be rewritten too, and each release would
+# edit the prose into something untrue. Write X.Y.Z, never a real number.
+# Verified with `rhiza-tools release --dry-run`, which reported exactly that on
+# two comment lines before this rewrite -- and again on the rewrite's own first
+# draft, which had made the same mistake.
+[tool.bumpversion]
+allow_dirty = false
+# The release flow folds the changelog into the bump commit and tags that commit
+# itself, so a bare `bump-my-version bump` must not add a second commit or a
+# duplicate tag.
+commit = false
+tag = false
+
+# rhiza-task reads this table, and it is where settings live that used to mean editing
+# a synced file. The root Makefile carried this one until rhiza 1.x replaced it with the
+# template shim, taking `MKDOCS_EXTRA_PACKAGES` with it -- so the book build lost both
+# entries below and failed with `ModuleNotFoundError: No module named 'mkdocs_graphviz'`.
+#
+# The list replaces rhiza-task's default of ["mkdocstrings[python]"] rather than adding
+# to it, so mkdocstrings has to be restated here or docs/api.md's `:::` directives stop
+# resolving.
+#
+# mkdocs_graphviz is pinned below 2: in 2.0 it stopped being a Markdown extension and
+# became an MkDocs plugin, dropping the makeExtension entry point that
+# `markdown_extensions` needs. We build with zensical, which only shims a fixed set of
+# MkDocs plugins (autorefs, mkdocstrings, glightbox, macros, search) and would silently
+# ignore the graphviz plugin, rendering every ```dot block as a plain code fence --
+# silently, which is why the pin is worth more than the upgrade. Unpin once zensical can
+# run it.
+#
+# "." is the project itself, which mkdocstrings imports to document. The 0.x Makefile
+# spelled it `--with-editable .`; rhiza-task passes these as plain `--with`, and a
+# non-editable install of the source tree serves the same purpose for a one-shot build.
+[tool.rhiza-task]
+mkdocs-extra-packages = ["mkdocstrings[python]", "mkdocs_graphviz<2", "."]
+
+# rhiza v1.7.3 pins the type checker itself (Jebel-Quant/rhiza#1667) and defaults to
+# ty ==0.0.78. On this codebase that version reports 36 diagnostics -- 20
+# invalid-argument-type, 10 unresolved-attribute, 4 invalid-assignment and two others
+# -- none of which is new code: they are the checker's inference having moved on across
+# roughly sixty pre-1.0 releases.
+#
+# So the pin is held at the version the 0.x template installed, which reports one
+# warning, and the diagnostics are deferred rather than dismissed. Some look like real
+# gaps worth fixing -- `Attribute 'parts' is not defined on 'None' in union
+# 'NodeKey | None'` is a genuine possible-None access -- so raising this is triage work
+# with its own issue (#405), not a number to nudge.
+#
+# Setting it here rather than in a dependency group is the difference between a
+# configured pin and a resolution conflict: the task passes its own `--with ty==<x>`,
+# so a competing constraint in [dependency-groups] would make the gate fail to install
+# rather than fail to typecheck.
+ty-version = "==0.0.18"
 
 [tool.deptry.per_rule_ignores]
 # pyarrow is loaded by name through loman._extras.require, so there is no import
@@ -74,6 +207,10 @@ packages = ["src/loman"]
 DEP002 = ["pyarrow"]
 
 [tool.deptry.package_module_name_map]
+# Declared so deptry stops guessing at the dash-to-underscore mapping and
+# reporting it on every run; the guesses were right, the noise was not.
+pytest-mock = "pytest_mock"
+pytest-timeout = "pytest_timeout"
 pyarrow = "pyarrow"
 zstandard = "zstandard"
 matplotlib = "matplotlib"
@@ -97,6 +234,13 @@ skips = ["B301", "B403", "B404"]
 # @overload stubs delegate their documentation to the concrete implementation,
 # so they should not count against docstring coverage.
 ignore-overloaded-functions = true
+
+# Functions and classes defined *inside* another function are local scaffolding,
+# not API: the tests build computation graphs from inline node functions such as
+# `def b(a): return a + 1`, and documenting those only restates the body. The
+# enclosing test keeps its docstring, which is where the intent belongs.
+ignore-nested-functions = true
+ignore-nested-classes = true
 
 [tool.check_test_layout]
 # Tests live flat under tests/ and are grouped by behaviour rather than
